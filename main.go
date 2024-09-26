@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	"SplendifeList-Server-Go/models"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
@@ -20,20 +22,18 @@ type DbConfigsPrivate struct {
 
 type DbConfigsPublic struct {
 	User     string `toml:"user"`
-	Host     string `toml:"host"`
-	Port     int    `toml:"port"`
 	Database string `toml:"database"`
 }
 
-func dbConnect(dbPublicConfigs DbConfigsPublic, dbPrivateConfigs DbConfigsPrivate) (*sql.DB, error) {
+func dbConnect(dbPublicConfigs DbConfigsPublic,
+	dbPrivateConfigs DbConfigsPrivate) (*sql.DB, error) {
 	connectionString := fmt.Sprintf(
-		"%s:%s@tcp(%s:%d)/%s",
+		"%s:%s@unix(/var/run/mysqld/mysqld.sock)/%s",
 		dbPublicConfigs.User,
 		dbPrivateConfigs.Password,
-		dbPublicConfigs.Host,
-		dbPublicConfigs.Port,
 		dbPublicConfigs.Database,
 	)
+
 	dbConnection, err := sql.Open("mysql", connectionString)
 	if err != nil {
 		return nil, err
@@ -47,13 +47,13 @@ func dbGetConfigs() (DbConfigsPublic, DbConfigsPrivate, error) {
 	var privateConfigs DbConfigsPrivate
 
 	// Get public configs
-	publicConfigFile, err := os.Open("config.toml")
+	publicConfigsFile, err := os.Open("config.toml")
 	if err != nil {
 		return publicConfigs, privateConfigs, err
 	}
-	defer publicConfigFile.Close()
+	defer publicConfigsFile.Close()
 
-	rawPublicConfigs, err := toml.LoadReader(publicConfigFile)
+	rawPublicConfigs, err := toml.LoadReader(publicConfigsFile)
 	if err != nil {
 		return publicConfigs, privateConfigs, err
 	}
@@ -64,18 +64,18 @@ func dbGetConfigs() (DbConfigsPublic, DbConfigsPrivate, error) {
 	}
 
 	// Get private configs
-	privateConfigFile, err := os.Open("private_config.toml")
+	privateConfigsFile, err := os.Open("private_config.toml")
 	if err != nil {
 		return publicConfigs, privateConfigs, err
 	}
-	defer privateConfigFile.Close()
+	defer privateConfigsFile.Close()
 
-	rawPrivateConfigs, err := toml.LoadReader(privateConfigFile)
+	rawPrivateConfigs, err := toml.LoadReader(privateConfigsFile)
 	if err != nil {
 		return publicConfigs, privateConfigs, err
 	}
 
-	err = rawPrivateConfigs.Unmarshal(&publicConfigs)
+	err = rawPrivateConfigs.Unmarshal(&privateConfigs)
 	if err != nil {
 		return publicConfigs, privateConfigs, err
 	}
@@ -83,15 +83,7 @@ func dbGetConfigs() (DbConfigsPublic, DbConfigsPrivate, error) {
 	return publicConfigs, privateConfigs, nil
 }
 
-func main() {
-	defer func() {
-		if r := recover(); r != nil {
-			msgStart := "Application error: "
-			fmt.Println(msgStart, r)
-			log.Println(msgStart, r)
-		}
-	}()
-
+func runProgram() error {
 	app := gin.Default()
 
 	corsConfig := cors.Config{
@@ -105,10 +97,14 @@ func main() {
 
 	dbPublicConfigs, dbPrivateConfigs, err := dbGetConfigs()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	dbConnection, err := dbConnect(dbPublicConfigs, dbPrivateConfigs)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dbConnection.Close()
 
 	baseRoute := "api"
 
@@ -118,6 +114,47 @@ func main() {
 	})
 
 	// Lists
+	app.GET(baseRoute+"/lists", func(context *gin.Context) {
+		rows, err := dbConnection.Query("SELECT * FROM item_lists")
+		if err != nil {
+			context.JSON(http.StatusInternalServerError,
+				gin.H{"error": err.Error()})
+
+			return
+		}
+		defer rows.Close()
+
+		var itemLists []models.ItemList
+		for rows.Next() {
+			var itemList models.ItemList
+			err = rows.Scan(&itemList.ID, &itemList.Name)
+			if err != nil {
+				context.JSON(http.StatusInternalServerError, gin.H{
+					"error": err.Error()})
+
+				return
+			}
+			itemLists = append(itemLists, itemList)
+		}
+
+		context.JSON(http.StatusOK, itemLists)
+	})
 
 	app.Run(":8000") // Defaults to localhost:8080 when no port given
+
+	return nil
+}
+
+func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			msgStart := "Application error: "
+			fmt.Println(msgStart, r)
+			log.Println(msgStart, r)
+		}
+	}()
+
+	if err := runProgram(); err != nil {
+		log.Fatal(err)
+	}
 }
