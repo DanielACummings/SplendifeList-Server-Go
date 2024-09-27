@@ -1,0 +1,3 @@
+database="splendifelist"
+unix_socket_path="/var/run/mysqld/mysqld.sock"
+user="splendifelist"
