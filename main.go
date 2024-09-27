@@ -8,12 +8,12 @@ import (
 	"os"
 	"time"
 
-	"SplendifeList-Server-Go/models"
-
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/pelletier/go-toml"
+
+	"SplendifeList-Server-Go/models"
 )
 
 type DbConfigsPrivate struct {
@@ -21,16 +21,18 @@ type DbConfigsPrivate struct {
 }
 
 type DbConfigsPublic struct {
-	User     string `toml:"user"`
-	Database string `toml:"database"`
+	User           string `toml:"user"`
+	Database       string `toml:"database"`
+	UnixSocketPath string `toml:"unix_socket_path"`
 }
 
 func dbConnect(dbPublicConfigs DbConfigsPublic,
 	dbPrivateConfigs DbConfigsPrivate) (*sql.DB, error) {
 	connectionString := fmt.Sprintf(
-		"%s:%s@unix(/var/run/mysqld/mysqld.sock)/%s",
+		"%s:%s@unix(%s)/%s",
 		dbPublicConfigs.User,
 		dbPrivateConfigs.Password,
+		dbPublicConfigs.UnixSocketPath,
 		dbPublicConfigs.Database,
 	)
 
@@ -115,7 +117,8 @@ func runProgram() error {
 
 	// Lists
 	app.GET(baseRoute+"/lists", func(context *gin.Context) {
-		rows, err := dbConnection.Query("SELECT * FROM item_lists")
+		rows, err := dbConnection.Query(
+			"SELECT id, name, crossed_out, user FROM item_lists")
 		if err != nil {
 			context.JSON(http.StatusInternalServerError,
 				gin.H{"error": err.Error()})
@@ -127,7 +130,7 @@ func runProgram() error {
 		var itemLists []models.ItemList
 		for rows.Next() {
 			var itemList models.ItemList
-			err = rows.Scan(&itemList.ID, &itemList.Name)
+			err = rows.Scan(&itemList.ID, &itemList.Name, &itemList.CrossedOut, &itemList.User)
 			if err != nil {
 				context.JSON(http.StatusInternalServerError, gin.H{
 					"error": err.Error()})
