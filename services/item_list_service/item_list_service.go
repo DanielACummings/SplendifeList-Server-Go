@@ -1,4 +1,4 @@
-package item_list
+package item_list_service
 
 import (
 	"database/sql"
@@ -17,7 +17,7 @@ func GetAllLists(dbConnection *sql.DB) ([]models.ItemList, error) {
 	var itemLists []models.ItemList
 	for rows.Next() {
 		var itemList models.ItemList
-		err = rows.Scan(&itemList.ID, &itemList.Name, &itemList.CrossedOut,
+		err = rows.Scan(&itemList.Id, &itemList.Name, &itemList.CrossedOut,
 			&itemList.User)
 		if err != nil {
 			return nil, err

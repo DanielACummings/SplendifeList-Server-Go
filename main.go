@@ -14,7 +14,8 @@ import (
 	"github.com/pelletier/go-toml"
 
 	"SplendifeList-Server-Go/models"
-	"SplendifeList-Server-Go/services/item_list"
+	"SplendifeList-Server-Go/services/item_list_service"
+	"SplendifeList-Server-Go/services/item_service"
 )
 
 type DbConfigsPrivate struct {
@@ -67,7 +68,7 @@ func dbGetConfigs() (DbConfigsPublic, DbConfigsPrivate, error) {
 	}
 
 	// Get private configs
-	privateConfigsFile, err := os.Open("private_config.toml")
+	privateConfigsFile, err := os.Open("config_private.toml")
 	if err != nil {
 		return publicConfigs, privateConfigs, err
 	}
@@ -119,7 +120,7 @@ func runProgram() error {
 	// Lists
 	app.GET(baseRoute+"/lists", func(context *gin.Context) {
 		var itemLists []models.ItemList
-		itemLists, err := item_list.GetAllLists(dbConnection)
+		itemLists, err := item_list_service.GetAllLists(dbConnection)
 		if err != nil {
 			context.JSON(http.StatusInternalServerError,
 				gin.H{"error": err.Error()})
@@ -138,7 +139,7 @@ func runProgram() error {
 			return
 		}
 
-		newItemListId, err := item_list.CreateList(dbConnection, newItemList)
+		newItemListId, err := item_list_service.CreateList(dbConnection, newItemList)
 		if err != nil {
 			context.JSON(http.StatusInternalServerError,
 				gin.H{"error": err.Error()})
@@ -151,6 +152,23 @@ func runProgram() error {
 			gin.H{"message": fmt.Sprintf("New list ID: %d", newItemListId)},
 		)
 	})
+
+	// Items
+	app.GET(baseRoute+"/lists/:listId/items",
+		func(context *gin.Context) {
+			userId := context.Query("userId")
+			var items []models.Item
+			items, err := item_service.GetItemsByItemList(dbConnection,
+				context.Param("listId"), userId)
+			if err != nil {
+				context.JSON(http.StatusInternalServerError,
+					gin.H{"error": err.Error()})
+
+				return
+			}
+
+			context.JSON(http.StatusOK, items)
+		})
 
 	app.Run(":8000") // Defaults to localhost:8080 when no port given
 
